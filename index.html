@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF Writer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+  try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
+</script>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script>
+  // shadcn/ui tokens (zinc)
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+        colors: {
+          border: 'hsl(var(--border))', input: 'hsl(var(--input))', ring: 'hsl(var(--ring))',
+          background: 'hsl(var(--background))', foreground: 'hsl(var(--foreground))',
+          primary: { DEFAULT: 'hsl(var(--primary))', foreground: 'hsl(var(--primary-foreground))' },
+          secondary: { DEFAULT: 'hsl(var(--secondary))', foreground: 'hsl(var(--secondary-foreground))' },
+          muted: { DEFAULT: 'hsl(var(--muted))', foreground: 'hsl(var(--muted-foreground))' },
+          accent: { DEFAULT: 'hsl(var(--accent))', foreground: 'hsl(var(--accent-foreground))' },
+          card: { DEFAULT: 'hsl(var(--card))', foreground: 'hsl(var(--card-foreground))' },
+        },
+        borderColor: { DEFAULT: 'hsl(var(--border))' },
+        borderRadius: { lg: 'var(--radius)', md: 'calc(var(--radius) - 2px)', sm: 'calc(var(--radius) - 4px)' },
+      },
+    },
+  };
+</script>
+<style>
+  :root {
+    --background: 0 0% 100%; --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%; --card-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%; --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%; --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%; --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%; --accent-foreground: 240 5.9% 10%;
+    --border: 240 5.9% 90%; --input: 240 5.9% 90%; --ring: 240 5.9% 10%;
+    --radius: 0.5rem;
+    /* Fillable-area highlight */
+    --hl: rgba(47,111,222,.10); --hl-hover: rgba(47,111,222,.18); --hl-focus: rgba(47,111,222,.24);
+    --hl-line: rgba(47,111,222,.55); --hl-accent: #2f6fde;
+    --field-font: Arial, Helvetica, sans-serif;
+  }
+  /* Dark theme: follows the system unless the toggle picked a theme (data-theme on <html>) */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme=light]) {
+      --background: 240 10% 3.9%; --foreground: 0 0% 98%;
+      --card: 240 10% 3.9%; --card-foreground: 0 0% 98%;
+      --primary: 0 0% 98%; --primary-foreground: 240 5.9% 10%;
+      --secondary: 240 3.7% 15.9%; --secondary-foreground: 0 0% 98%;
+      --muted: 240 3.7% 15.9%; --muted-foreground: 240 5% 64.9%;
+      --accent: 240 3.7% 15.9%; --accent-foreground: 0 0% 98%;
+      --border: 240 3.7% 15.9%; --input: 240 3.7% 15.9%; --ring: 240 4.9% 83.9%;
+    }
+    :root:not([data-theme=light]) .icon-moon { display:none; }
+    :root:not([data-theme=light]) .icon-sun { display:block; }
+  }
+  :root[data-theme=dark] {
+      --background: 240 10% 3.9%; --foreground: 0 0% 98%;
+      --card: 240 10% 3.9%; --card-foreground: 0 0% 98%;
+      --primary: 0 0% 98%; --primary-foreground: 240 5.9% 10%;
+      --secondary: 240 3.7% 15.9%; --secondary-foreground: 0 0% 98%;
+      --muted: 240 3.7% 15.9%; --muted-foreground: 240 5% 64.9%;
+      --accent: 240 3.7% 15.9%; --accent-foreground: 0 0% 98%;
+      --border: 240 3.7% 15.9%; --input: 240 3.7% 15.9%; --ring: 240 4.9% 83.9%;
+  }
+  :root[data-theme=dark] .icon-moon { display:none; }
+  :root[data-theme=dark] .icon-sun { display:block; }
+  .icon-sun { display:none; }
+  input[type=range] { accent-color: hsl(var(--primary)); }
+  .shimmer { background: linear-gradient(100deg, #fff 30%, #f1f1f3 50%, #fff 70%) 0 0 / 300% 100%;
+             animation: shimmer 1.4s ease-in-out infinite; }
+  @keyframes shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+  @media (prefers-reduced-motion: reduce) { .shimmer { animation: none; } }
+
+  /* PDF pages stay paper-white in both themes */
+  .page { position:relative; flex:none; background:#fff; cursor:text; }
+  .page canvas { display:block; }
+  /* The white sheet replaces the white placeholder at once; only its content fades in (no dark flash) */
+  .page > * { transition: opacity .3s ease-out; }
+  .page.loading > * { opacity: 0; }
+
+  /* Every fillable area: blue highlight at rest, stronger on hover and focus.
+     Outline is drawn with an inset shadow (no border/padding) so text sits exactly where the PDF will put it. */
+  .field, .overlay { position:absolute; margin:0; border:0; border-radius:2px; color:#000;
+                     font-family:var(--field-font); background:var(--hl);
+                     box-shadow:inset 0 0 0 1px var(--hl-line); transition:background .15s ease-out, box-shadow .15s ease-out; }
+  .field:hover, .overlay:hover { background:var(--hl-hover); }
+  .field:focus, .overlay:focus { outline:none; background:var(--hl-focus); box-shadow:inset 0 0 0 2px var(--hl-accent); }
+  .field { padding:0 2px; resize:none; }
+  .overlay { padding:0 2px; }
+  .overlay.cell, .overlay.mark { padding:0; text-align:center; }
+  .overlay.free { background:transparent; }
+  .overlay.area { padding:0 2px; resize:none; overflow:hidden; white-space:pre-wrap; overflow-wrap:break-word; }
+  .overlay.check { padding:0; cursor:pointer; display:block; }
+  .overlay.check svg { display:block; pointer-events:none; }
+
+  /* Zoom: the page keeps its PDF-scale layout and is scaled inside a wrapper sized to the zoomed page */
+  .page-wrap { position:relative; flex:none; }
+  .page-wrap > .page { position:absolute; left:0; top:0; transform-origin:0 0; }
+  main[data-mode=draw] .page { cursor:crosshair; }
+  main[data-mode=sign] .page, main[data-mode=date] .page { cursor:copy; }
+
+  /* Signature images, the field being drawn, and the delete / resize handles */
+  .sig { position:absolute; cursor:move; outline:none; touch-action:none; border-radius:2px; }
+  .sig img { width:100%; height:100%; display:block; pointer-events:none; user-select:none; }
+  .sig:hover, .sig:focus { box-shadow:0 0 0 1px var(--hl-accent); }
+  .draft { position:absolute; border:1.5px dashed var(--hl-accent); background:var(--hl); pointer-events:none; }
+  .ctl-del { position:absolute; z-index:5; width:18px; height:18px; border-radius:9999px; background:#18181b; color:#fff;
+             display:grid; place-items:center; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,.3); }
+  .ctl-size { position:absolute; z-index:5; width:10px; height:10px; background:#fff; border:1.5px solid var(--hl-accent);
+              border-radius:2px; cursor:nwse-resize; touch-action:none; }
+</style>
+</head>
+<body class="bg-background font-sans text-foreground antialiased">
+<div class="flex min-h-screen flex-col md:h-screen">
+
+  <!-- Header -->
+  <header class="flex h-14 shrink-0 items-center gap-3 border-b px-4">
+    <div class="flex items-center gap-2">
+      <div class="grid h-7 w-7 place-items-center rounded-md bg-primary text-primary-foreground">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      </div>
+      <span class="whitespace-nowrap text-sm font-semibold">PDF Writer</span>
+    </div>
+    <div class="hidden h-4 w-px bg-border sm:block"></div>
+    <span id="fileName" class="hidden min-w-0 truncate text-sm text-muted-foreground sm:block"></span>
+    <div class="hidden sm:flex"><span id="statusBadge" class="hidden shrink-0 items-center rounded-md border border-transparent bg-secondary px-2.5 py-0.5 text-xs font-semibold text-secondary-foreground"></span></div>
+    <div class="ml-auto flex items-center gap-2">
+      <button id="themeBtn" aria-label="Toggle light or dark mode" title="Toggle light or dark mode"
+              class="inline-flex h-9 w-9 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+        <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+        <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </button>
+      <button id="openBtn" class="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-3 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6"/></svg>
+        <span class="hidden sm:inline">Open PDF</span>
+      </button>
+      <div class="group relative">
+      <button id="downloadBtn" disabled class="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+        <span class="hidden sm:inline">Download</span>
+      </button>
+      <div id="downloadTip" role="tooltip" class="pointer-events-none absolute right-0 top-full z-20 mt-2 whitespace-nowrap rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground opacity-0 shadow-md transition-opacity duration-150 ease-out group-hover:opacity-100">Open a PDF first</div>
+      </div>
+    </div>
+    <input type="file" id="fileInput" accept="application/pdf" class="sr-only">
+  </header>
+
+  <div class="flex min-h-0 flex-1 flex-col md:flex-row">
+
+    <!-- Settings -->
+    <aside id="sidebar" class="shrink-0 space-y-6 opacity-60 transition-opacity duration-200 ease-out overflow-y-auto border-b p-4 md:w-72 md:border-b-0 md:border-r">
+      <section class="space-y-4">
+        <div>
+          <h2 class="text-sm font-semibold">Text</h2>
+          <p class="text-sm text-muted-foreground">Applies to everything you type.</p>
+        </div>
+        <div class="space-y-2">
+          <label for="fontSelect" class="text-sm font-medium leading-none">Font family</label>
+          <select id="fontSelect" class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"></select>
+          <p id="fontPreview" class="truncate rounded-md bg-muted px-3 py-1.5 text-sm" style="font-family:var(--field-font)">The quick brown fox 0123</p>
+        </div>
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <label for="sizeRange" class="text-sm font-medium leading-none">Text size</label>
+            <div class="flex items-center gap-1">
+              <input id="sizeInput" type="number" min="6" max="24" step="0.5" value="11"
+                     class="h-8 w-16 rounded-md border border-input bg-transparent px-2 text-right text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+              <span class="text-sm text-muted-foreground">pt</span>
+            </div>
+          </div>
+          <input id="sizeRange" type="range" min="6" max="24" step="0.5" value="11" class="w-full">
+        </div>
+        <div class="flex items-center justify-between gap-4">
+          <div class="space-y-1">
+            <label for="capsSwitch" class="text-sm font-medium leading-none">ALL CAPS</label>
+            <p class="text-xs text-muted-foreground">Type everything in capital letters.</p>
+          </div>
+          <button id="capsSwitch" role="switch" aria-checked="false" data-state="unchecked" class="inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=checked]:bg-primary data-[state=unchecked]:bg-input"><span data-state="unchecked" class="pointer-events-none block h-4 w-4 rounded-full bg-background shadow-lg transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0"></span></button>
+        </div>
+      </section>
+
+      <div class="h-px bg-border"></div>
+
+      <section class="space-y-3">
+        <div>
+          <h2 class="text-sm font-semibold">Checkbox</h2>
+          <p class="text-sm text-muted-foreground">Mark used when you tick a box.</p>
+        </div>
+        <div id="markGroup" role="radiogroup" aria-label="Checkbox mark" class="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
+          <button role="radio" data-mark="check" aria-checked="true" class="inline-flex h-8 items-center justify-center gap-2 rounded-md text-sm font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring aria-[checked=true]:bg-background aria-[checked=true]:text-foreground aria-[checked=true]:shadow-sm"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Check</button>
+          <button role="radio" data-mark="cross" aria-checked="false" class="inline-flex h-8 items-center justify-center gap-2 rounded-md text-sm font-medium text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring aria-[checked=true]:bg-background aria-[checked=true]:text-foreground aria-[checked=true]:shadow-sm"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>Cross</button>
+        </div>
+      </section>
+
+      <div class="h-px bg-border"></div>
+
+      <section class="space-y-4">
+        <h2 class="text-sm font-semibold">Export</h2>
+        <div class="flex items-center justify-between gap-4">
+          <div class="space-y-1">
+            <label for="flattenSwitch" class="text-sm font-medium leading-none">Flatten</label>
+            <p class="text-xs text-muted-foreground">Lock form fields so they can't be edited.</p>
+          </div>
+          <button id="flattenSwitch" role="switch" aria-checked="false" data-state="unchecked"
+                  class="inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=checked]:bg-primary data-[state=unchecked]:bg-input">
+            <span data-state="unchecked" class="pointer-events-none block h-4 w-4 rounded-full bg-background shadow-lg transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0"></span>
+          </button>
+        </div>
+      </section>
+
+      <div class="hidden h-px bg-border md:block"></div>
+
+      <section class="hidden space-y-3 md:block">
+        <h2 class="text-sm font-semibold">Shortcuts</h2>
+        <ul class="space-y-2 text-sm text-muted-foreground">
+          <li class="flex items-center justify-between gap-2">Next field <kbd class="rounded border bg-muted px-1.5 font-mono text-[11px] font-medium">Tab</kbd></li>
+          <li class="flex items-center justify-between gap-2">Previous field <kbd class="rounded border bg-muted px-1.5 font-mono text-[11px] font-medium">Shift Tab</kbd></li>
+          <li class="flex items-center justify-between gap-2">Previous box <kbd class="rounded border bg-muted px-1.5 font-mono text-[11px] font-medium">Backspace</kbd></li>
+          <li class="flex items-center justify-between gap-2">Tick a checkbox <kbd class="rounded border bg-muted px-1.5 font-mono text-[11px] font-medium">Space</kbd></li>
+          <li class="flex items-center justify-between gap-2">Add text anywhere <kbd class="rounded border bg-muted px-1.5 font-mono text-[11px] font-medium">Click</kbd></li>
+          <li class="flex items-center justify-between gap-2">Leave a tool <kbd class="rounded border bg-muted px-1.5 font-mono text-[11px] font-medium">Esc</kbd></li>
+        </ul>
+      </section>
+    </aside>
+
+    <!-- Document -->
+    <main id="main" class="relative min-h-[70vh] flex-1 overflow-auto bg-muted/50 md:min-h-0">
+      <div id="empty" class="flex h-full min-h-[70vh] items-center justify-center p-6 md:min-h-0">
+        <div id="dropzone" data-drag="false" class="group flex w-full max-w-md flex-col items-center gap-4 rounded-xl border-2 border-dashed bg-card p-10 text-center text-card-foreground transition-[border-color,background-color] duration-150 ease-out data-[drag=true]:border-primary data-[drag=true]:bg-primary/5">
+          <div class="grid h-12 w-12 place-items-center rounded-full bg-muted transition-transform duration-150 ease-out group-data-[drag=true]:scale-105">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>
+          </div>
+          <div class="space-y-1">
+            <p class="font-semibold"><span class="group-data-[drag=true]:hidden">Drop a PDF here</span><span class="hidden group-data-[drag=true]:inline">Release to open</span></p>
+            <p class="text-sm text-muted-foreground">Fillable fields, dotted lines, boxes and table cells are found automatically.</p>
+          </div>
+          <button id="chooseBtn" class="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">Choose PDF</button>
+        </div>
+      </div>
+      <div id="toolsBar" class="pointer-events-none sticky left-0 top-0 z-30 hidden flex-col items-center gap-2 p-3">
+        <div class="pointer-events-auto flex items-center gap-1 rounded-lg border bg-background/95 p-1 shadow-sm backdrop-blur">
+          <button data-tool="type" aria-pressed="true" title="Type in fields, click anywhere to add text" class="tool inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring aria-[pressed=true]:bg-accent aria-[pressed=true]:text-foreground">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 22h-1a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4h1"/><path d="M7 22h1a4 4 0 0 0 4-4v-1"/><path d="M7 2h1a4 4 0 0 1 4 4v1"/></svg><span class="hidden sm:inline">Type</span></button>
+          <button data-tool="draw" aria-pressed="false" title="Drag on the page to add a field" class="tool inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring aria-[pressed=true]:bg-accent aria-[pressed=true]:text-foreground">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="4 3"/><path d="M12 8v8M8 12h8"/></svg><span class="hidden sm:inline">Add field</span></button>
+          <button data-tool="sign" aria-pressed="false" title="Place your signature" class="tool inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring aria-[pressed=true]:bg-accent aria-[pressed=true]:text-foreground">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 17-2.16-1.87a.5.5 0 0 0-.84.37v.5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1c0-2.55-4-3.97-8.5-4a1 1 0 0 0 0 5c4.15 0 4.75-11.3 5.71-13.5a2.5 2.5 0 1 1 3.31 3.28"/><path d="M3 21h18"/></svg><span class="hidden sm:inline">Signature</span></button>
+          <button data-tool="date" aria-pressed="false" title="Place today's date" class="tool inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring aria-[pressed=true]:bg-accent aria-[pressed=true]:text-foreground">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span class="hidden sm:inline">Date</span></button>
+          <div class="mx-1 h-5 w-px bg-border"></div>
+          <button id="zoomOut" title="Zoom out" aria-label="Zoom out" class="tool inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring aria-[pressed=true]:bg-accent aria-[pressed=true]:text-foreground"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg></button>
+          <button id="zoomReset" title="Reset zoom" class="tool inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring aria-[pressed=true]:bg-accent aria-[pressed=true]:text-foreground w-14 justify-center tabular-nums">100%</button>
+          <button id="zoomIn" title="Zoom in" aria-label="Zoom in" class="tool inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring aria-[pressed=true]:bg-accent aria-[pressed=true]:text-foreground"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5v14"/></svg></button>
+        </div>
+        <p id="toolHint" class="hidden rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground shadow-md"></p>
+      </div>
+      <div id="pages" class="hidden w-max min-w-full flex-col items-center gap-6 p-6 pt-0"></div>
+    </main>
+  </div>
+</div>
+
+<!-- Signature dialog -->
+<div id="sigDialog" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 p-4">
+  <div role="dialog" aria-modal="true" aria-labelledby="sigTitle" class="w-full max-w-lg space-y-4 rounded-lg border bg-background p-6 text-foreground shadow-lg">
+    <div class="space-y-1.5">
+      <h2 id="sigTitle" class="text-lg font-semibold leading-none">Your signature</h2>
+      <p class="text-sm text-muted-foreground">Draw it with your mouse or finger, or upload an image. It's kept in this browser for next time.</p>
+    </div>
+    <div class="relative">
+      <canvas id="sigCanvas" class="block h-44 w-full touch-none rounded-md border bg-white"></canvas>
+      <p id="sigEmpty" class="pointer-events-none absolute inset-0 grid place-items-center text-sm text-zinc-400">Sign here</p>
+    </div>
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="flex gap-2">
+        <button id="sigClear" class="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-3 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring h-8">Clear</button>
+        <button id="sigUpload" class="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-3 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring h-8">Upload image</button>
+        <input id="sigFile" type="file" accept="image/png,image/jpeg" class="sr-only">
+      </div>
+      <div class="flex gap-2">
+        <button id="sigCancel" class="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-3 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">Cancel</button>
+        <button id="sigUse" disabled class="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50">Place signature</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
+<script src="detect.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
